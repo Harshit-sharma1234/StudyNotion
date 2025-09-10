@@ -21,15 +21,17 @@ export default function Upload({
   const [previewSource, setPreviewSource] = useState(
     viewData ? viewData : editData ? editData : ""
   )
-  const inputRef = useRef(null)
+
 
   const onDrop = (acceptedFiles) => {
     const file = acceptedFiles[0]
     if (file) {
       previewFile(file)
       setSelectedFile(file)
+      setValue(name, file) // ✅ SET FORM VALUE IMMEDIATELY
     }
   }
+
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     accept: !video
@@ -53,9 +55,11 @@ export default function Upload({
   }, [register])
 
   useEffect(() => {
-    setValue(name, selectedFile)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedFile, setValue])
+    if (editData && !selectedFile) {
+      setValue(name, editData)
+    }
+  }, [editData, selectedFile, setValue])
+
 
   return (
     <div className="flex flex-col space-y-2">
@@ -97,7 +101,7 @@ export default function Upload({
             className="flex w-full flex-col items-center p-6"
             {...getRootProps()}
           >
-            <input {...getInputProps()} ref={inputRef} />
+            <input {...getInputProps()}  />
             <div className="grid aspect-square w-14 place-items-center rounded-full bg-pure-greys-800">
               <FiUploadCloud className="text-2xl text-yellow-50" />
             </div>
