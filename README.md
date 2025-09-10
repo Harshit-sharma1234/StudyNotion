@@ -9,19 +9,7 @@
 
 StudyNotion is a fully functional Ed-tech platform built with the MERN stack. It enables users to create, consume, and rate educational content. The platform is designed for both learners and instructors, providing a seamless and interactive learning experience.
 
-## 🚀 Live Demo
 
-You can view the live project here: [**StudyNotion Live Link**](https://your-live-project-link.com)
-
-## 📸 Screenshots
-
-Here are a few snapshots of the application in action:
-
-*(A screenshot of your homepage)*
-
-*(A screenshot of a course page)*
-
-*(A screenshot of the user dashboard)*
 
 
 ## ✨ Features
