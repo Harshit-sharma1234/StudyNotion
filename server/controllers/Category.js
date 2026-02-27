@@ -1,124 +1,140 @@
-const { Mongoose } = require("mongoose");
-const Category = require("../models/Category");
+const supabase = require("../config/supabase");
+
 function getRandomInt(max) {
-    return Math.floor(Math.random() * max)
-  }
+  return Math.floor(Math.random() * max);
+}
 
 exports.createCategory = async (req, res) => {
-	try {
-		const { name, description } = req.body;
-		if (!name) {
-			return res
-				.status(400)
-				.json({ success: false, message: "All fields are required" });
-		}
-		const CategorysDetails = await Category.create({
-			name: name,
-			description: description,
-		});
-		console.log(CategorysDetails);
-		return res.status(200).json({
-			success: true,
-			message: "Categorys Created Successfully",
-		});
-	} catch (error) {
-		return res.status(500).json({
-			success: true,
-			message: error.message,
-		});
-	}
+  try {
+    const { name, description } = req.body;
+    if (!name) {
+      return res
+        .status(400)
+        .json({ success: false, message: "All fields are required" });
+    }
+
+    const { data: category, error } = await supabase
+      .from("categories")
+      .insert({ name, description })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return res.status(200).json({
+      success: true,
+      message: "Category Created Successfully",
+      data: category
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
 };
 
 exports.showAllCategories = async (req, res) => {
-	try {
-        console.log("INSIDE SHOW ALL CATEGORIES");
-		const allCategorys = await Category.find({});
-		res.status(200).json({
-			success: true,
-			data: allCategorys,
-		});
-	} catch (error) {
-		return res.status(500).json({
-			success: false,
-			message: error.message,
-		});
-	}
+  try {
+    const { data: allCategories, error } = await supabase
+      .from("categories")
+      .select("*");
+
+    if (error) throw error;
+
+    res.status(200).json({
+      success: true,
+      data: allCategories,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
 };
 
-//categoryPageDetails
-
 exports.categoryPageDetails = async (req, res) => {
-    try {
-      const { categoryId } = req.body
-      console.log("PRINTING CATEGORY ID: ", categoryId);
-      // Get courses for the specified category
-      const selectedCategory = await Category.findById(categoryId)
-        .populate({
-          path: "courses",
-          match: { status: "Published" },
-          populate: "ratingAndReviews",
-        })
-        .exec()
+  try {
+    const { categoryId } = req.body;
 
-      //console.log("SELECTED COURSE", selectedCategory)
-      // Handle the case when the category is not found
-      if (!selectedCategory) {
-        console.log("Category not found.")
-        return res
-          .status(404)
-          .json({ success: false, message: "Category not found" })
-      }
-      // Handle the case when there are no courses
-      if (selectedCategory.courses.length === 0) {
-        console.log("No courses found for the selected category.")
-        return res.status(404).json({
-          success: false,
-          message: "No courses found for the selected category.",
-        })
-      }
+    // 1. Get courses for the specified category
+    const { data: selectedCategory, error: selectedError } = await supabase
+      .from("categories")
+      .select(`
+				*,
+				courses!courses_category_id_fkey (
+					*,
+					ratings_reviews (*)
+				)
+			`)
+      .eq("id", categoryId)
+      .eq("courses.status", "Published")
+      .single();
 
-      // Get courses for other categories
-      const categoriesExceptSelected = await Category.find({
-        _id: { $ne: categoryId },
-      })
-      let differentCategory = await Category.findOne(
-        categoriesExceptSelected[getRandomInt(categoriesExceptSelected.length)]
-          ._id
-      )
-        .populate({
-          path: "courses",
-          match: { status: "Published" },
-        })
-        .exec()
-        //console.log("Different COURSE", differentCategory)
-      // Get top-selling courses across all categories
-      const allCategories = await Category.find()
-        .populate({
-          path: "courses",
-          match: { status: "Published" },
-          populate: {
-            path: "instructor",
-        },
-        })
-        .exec()
-      const allCourses = allCategories.flatMap((category) => category.courses)
-      const mostSellingCourses = allCourses
-        .sort((a, b) => b.sold - a.sold)
-        .slice(0, 10)
-       // console.log("mostSellingCourses COURSE", mostSellingCourses)
-      res.status(200).json({
-        success: true,
-        data: {
-          selectedCategory,
-          differentCategory,
-          mostSellingCourses,
-        },
-      })
-    } catch (error) {
-      return res.status(500).json({
-        success: false,
-        message: "Internal server error",
-        error: error.message,
-      })
+    if (selectedError || !selectedCategory) {
+      return res.status(404).json({ success: false, message: "Category not found" });
     }
+
+    if (!selectedCategory.courses || selectedCategory.courses.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No courses found for the selected category.",
+      });
+    }
+
+    // 2. Get courses for other categories
+    const { data: otherCategories, error: othersError } = await supabase
+      .from("categories")
+      .select(`
+				*,
+				courses (
+					*,
+					ratings_reviews (*)
+				)
+			`)
+      .neq("id", categoryId)
+      .eq("courses.status", "Published");
+
+    let differentCategory = null;
+    if (otherCategories && otherCategories.length > 0) {
+      differentCategory = otherCategories[getRandomInt(otherCategories.length)];
+    }
+
+    // 3. Get most selling courses (across all categories)
+    // We join with course_enrollments to count 'sales'
+    const { data: allCoursesData, error: coursesError } = await supabase
+      .from("courses")
+      .select(`
+				*,
+				users!instructor_id (id, first_name, last_name, image),
+				course_enrollments (count)
+			`)
+      .eq("status", "Published");
+
+    if (coursesError) throw coursesError;
+
+    const mostSellingCourses = allCoursesData
+      .map(course => ({
+        ...course,
+        sold: course.course_enrollments?.[0]?.count || 0
+      }))
+      .sort((a, b) => b.sold - a.sold)
+      .slice(0, 10);
+
+    res.status(200).json({
+      success: true,
+      data: {
+        selectedCategory,
+        differentCategory,
+        mostSellingCourses,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
   }
+};

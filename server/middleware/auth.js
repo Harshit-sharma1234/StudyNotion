@@ -1,20 +1,44 @@
 // Importing required modules
 const jwt = require("jsonwebtoken");
 const dotenv = require("dotenv");
-const User = require("../models/User");
+// const User = require("../models/User"); // Deprecated after Supabase migration
 // Configuring dotenv to load environment variables from .env file
 dotenv.config();
+
+const supabase = require("../config/supabase");
 
 // This function is used as middleware to authenticate user requests
 const { createClerkClient } = require("@clerk/clerk-sdk-node");
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 
+// Utility to map Supabase user record to frontend format
+const mapUserToFrontend = (dbUser) => {
+	if (!dbUser) return null;
+	return {
+		id: dbUser.id,
+		firstName: dbUser.first_name,
+		lastName: dbUser.last_name,
+		email: dbUser.email,
+		accountType: dbUser.account_type,
+		active: dbUser.active,
+		approved: dbUser.approved,
+		image: dbUser.image,
+		additionalDetails: dbUser.profiles ? {
+			id: dbUser.profiles.id,
+			gender: dbUser.profiles.gender,
+			dateOfBirth: dbUser.profiles.date_of_birth,
+			about: dbUser.profiles.about,
+			contactNumber: dbUser.profiles.contact_number,
+		} : null
+	};
+};
+
+
 exports.auth = async (req, res, next) => {
 	try {
-		// Extracting JWT from request headers
+		// Extracting token from request headers
 		const token = req.header("Authorization")?.replace("Bearer ", "");
 
-		// If JWT is missing, return 401 Unauthorized response
 		if (!token) {
 			return res.status(401).json({ success: false, message: `Token Missing` });
 		}
@@ -28,52 +52,86 @@ exports.auth = async (req, res, next) => {
 			const clerkUser = await clerkClient.users.getUser(clerkId);
 			const email = clerkUser.emailAddresses[0].emailAddress;
 
-			// Check if user exists in MongoDB by clerkId
-			let dbUser = await User.findOne({ clerkId }).populate("additionalDetails");
+			// Check if user exists in Supabase by clerk_id
+			let { data: dbUser, error: fetchError } = await supabase
+				.from("users")
+				.select("*, profiles(*)")
+				.eq("clerk_id", clerkId)
+				.single();
+
+			if (fetchError && fetchError.code === "PGRST205") {
+				throw new Error("Supabase tables missing. Please apply the SQL schema to your Supabase project.");
+			}
 
 			if (!dbUser) {
-				// If not found by clerkId, try finding by email (for existing users pre-clerk)
-				dbUser = await User.findOne({ email }).populate("additionalDetails");
+				// If not found by clerk_id, try finding by email
+				let { data: existingUser, error: emailError } = await supabase
+					.from("users")
+					.select("*, profiles(*)")
+					.eq("email", email)
+					.single();
 
-				if (dbUser) {
+				if (emailError && emailError.code === "PGRST205") throw new Error("Supabase tables missing.");
+
+				if (existingUser) {
 					// Link the account
-					dbUser.clerkId = clerkId;
-					await dbUser.save();
-				} else {
-					// Auto-create user if not found (Sync on the fly)
-					const profileDetails = await Profile.create({
-						gender: null,
-						dateOfBirth: null,
-						about: null,
-						contactNumber: null,
-					});
+					const { data: updatedUser, error: linkError } = await supabase
+						.from("users")
+						.update({ clerk_id: clerkId })
+						.eq("id", existingUser.id)
+						.select("*, profiles(*)")
+						.single();
 
-					dbUser = await User.create({
-						firstName: clerkUser.firstName || "",
-						lastName: clerkUser.lastName || "",
-						email: email,
-						clerkId: clerkId,
-						accountType: clerkUser.unsafeMetadata?.accountType || "Student",
-						additionalDetails: profileDetails._id,
-						image: clerkUser.imageUrl,
-						password: "CLERK_MANAGED", // Placeholder for required field
-						approved: true,
-					});
-					dbUser = await dbUser.populate("additionalDetails");
+					if (linkError) throw linkError;
+					dbUser = updatedUser;
+				} else {
+					// Auto-create profile and user in Supabase
+					const { data: newProfile, error: profileError } = await supabase
+						.from("profiles")
+						.insert({})
+						.select()
+						.single();
+
+					if (profileError) {
+						if (profileError.code === "PGRST205") throw new Error("Supabase tables missing.");
+						throw profileError;
+					}
+
+					const { data: newUser, error: userError } = await supabase
+						.from("users")
+						.insert({
+							first_name: clerkUser.firstName || "",
+							last_name: clerkUser.lastName || "",
+							email: email,
+							clerk_id: clerkId,
+							account_type: clerkUser.unsafeMetadata?.accountType || "Student",
+							additional_details_id: newProfile.id,
+							image: clerkUser.imageUrl,
+							active: true,
+							approved: true
+						})
+						.select("*, profiles(*)")
+						.single();
+
+					if (userError) throw userError;
+					dbUser = newUser;
 				}
 			}
 
-			// Storing the database user document in the request object
-			// Controllers expect req.user.id to be MongoDB _id
-			req.user = dbUser;
+			if (!dbUser) {
+				return res.status(401).json({ success: false, message: "User not found in database and could not be created." });
+			}
+
+			// mapping to frontend format
+			req.user = mapUserToFrontend(dbUser);
+
 		} catch (error) {
-			console.error("Clerk Token Verification Error:", error);
+			console.error("Supabase/Clerk Auth Error:", error);
 			return res
 				.status(401)
-				.json({ success: false, message: "token is invalid" });
+				.json({ success: false, message: "Authentication failed", error: error.message });
 		}
 
-		// If JWT is valid, move on to the next middleware or request handler
 		next();
 	} catch (error) {
 		console.error("Auth Middleware Error:", error);
