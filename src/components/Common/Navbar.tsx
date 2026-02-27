@@ -11,6 +11,7 @@ import { apiConnector } from "../../services/apiConnector"
 import { categories } from "../../services/apis"
 import { ACCOUNT_TYPE } from "../../utils/constants"
 import ProfileDropdown from "../core/Auth/ProfileDropdown"
+import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from "@clerk/clerk-react"
 
 // const subLinks = [
 //   {
@@ -41,7 +42,7 @@ function Navbar() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       setLoading(true)
       try {
         const res = await apiConnector("GET", categories.CATEGORIES_API)
@@ -62,9 +63,8 @@ function Navbar() {
 
   return (
     <div
-      className={`flex h-14 items-center justify-center border-b-[1px] border-b-richblack-700 ${
-        location.pathname !== "/" ? "bg-richblack-800" : ""
-      } transition-all duration-200`}
+      className={`flex h-14 items-center justify-center border-b-[1px] border-b-richblack-700 ${location.pathname !== "/" ? "bg-richblack-800" : ""
+        } transition-all duration-200`}
     >
       <div className="flex w-11/12 max-w-maxContent items-center justify-between">
         {/* Logo */}
@@ -79,11 +79,10 @@ function Navbar() {
                 {link.title === "Catalog" ? (
                   <>
                     <div
-                      className={`group relative flex cursor-pointer items-center gap-1 ${
-                        matchRoute("/catalog/:catalogName")
-                          ? "text-yellow-25"
-                          : "text-richblack-25"
-                      }`}
+                      className={`group relative flex cursor-pointer items-center gap-1 ${matchRoute("/catalog/:catalogName")
+                        ? "text-yellow-25"
+                        : "text-richblack-25"
+                        }`}
                     >
                       <p>{link.title}</p>
                       <BsChevronDown />
@@ -94,8 +93,8 @@ function Navbar() {
                         ) : subLinks.length ? (
                           <>
                             {subLinks?.filter(
-  (subLink) => Array.isArray(subLink?.courses) && subLink.courses.length > 0
-)
+                              (subLink) => Array.isArray(subLink?.courses) && subLink.courses.length > 0
+                            )
 
                               ?.map((subLink, i) => (
                                 <Link
@@ -119,11 +118,10 @@ function Navbar() {
                 ) : (
                   <Link to={link?.path}>
                     <p
-                      className={`${
-                        matchRoute(link?.path)
-                          ? "text-yellow-25"
-                          : "text-richblack-25"
-                      }`}
+                      className={`${matchRoute(link?.path)
+                        ? "text-yellow-25"
+                        : "text-richblack-25"
+                        }`}
                     >
                       {link.title}
                     </p>
@@ -145,21 +143,21 @@ function Navbar() {
               )}
             </Link>
           )}
-          {token === null && (
-            <Link to="/login">
+          <SignedOut>
+            <SignInButton mode="modal">
               <button className="rounded-[8px] border border-richblack-700 bg-richblack-800 px-[12px] py-[8px] text-richblack-100">
                 Log in
               </button>
-            </Link>
-          )}
-          {token === null && (
-            <Link to="/signup">
+            </SignInButton>
+            <SignUpButton mode="modal">
               <button className="rounded-[8px] border border-richblack-700 bg-richblack-800 px-[12px] py-[8px] text-richblack-100">
                 Sign up
               </button>
-            </Link>
-          )}
-          {token !== null && <ProfileDropdown />}
+            </SignUpButton>
+          </SignedOut>
+          <SignedIn>
+            <UserButton />
+          </SignedIn>
         </div>
         <button className="mr-4 md:hidden">
           <AiOutlineMenu fontSize={24} fill="#AFB2BF" />

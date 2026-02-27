@@ -58,47 +58,8 @@ function App() {
         <Route path="/contact" element={<Contact />} />
         <Route path="courses/:courseId" element={<CourseDetails />} />
         <Route path="catalog/:catalogName" element={<Catalog />} />
-        {/* Open Route - for Only Non Logged in User */}
-        <Route
-          path="login"
-          element={
-            <OpenRoute>
-              <Login />
-            </OpenRoute>
-          }
-        />
-        <Route
-          path="forgot-password"
-          element={
-            <OpenRoute>
-              <ForgotPassword />
-            </OpenRoute>
-          }
-        />
-        <Route
-          path="update-password/:id"
-          element={
-            <OpenRoute>
-              <UpdatePassword />
-            </OpenRoute>
-          }
-        />
-        <Route
-          path="signup"
-          element={
-            <OpenRoute>
-              <Signup />
-            </OpenRoute>
-          }
-        />
-        <Route
-          path="verify-email"
-          element={
-            <OpenRoute>
-              <VerifyEmail />
-            </OpenRoute>
-          }
-        />
+        {/* Clerk Auth currently handles these via modals on SignedOut component in Navbar.
+            Custom pages have been removed to use Clerk's UI flow. */}
         {/* Private Route - for Only Logged in User */}
         <Route
           element={
