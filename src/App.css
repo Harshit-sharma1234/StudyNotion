@@ -8,32 +8,35 @@ body {
 }
 
 /* ===== Scrollbar CSS ===== */
-/* Firefox */
-* {
-  scrollbar-width: auto;
-  scrollbar-color: #afb2bf;
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
 }
 
-/* Chrome, Edge, and Safari */
-*::-webkit-scrollbar {
-  width: 3px;
-}
-
-*::-webkit-scrollbar-track {
+.custom-scrollbar::-webkit-scrollbar-track {
   background: #000814;
 }
 
-*::-webkit-scrollbar-thumb {
-  background-color: #afb2bf;
-  border-radius: 10px;
-  visibility: hidden;
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #2C333F;
+  border-radius: 20px;
+  border: 2px solid #000814;
 }
 
-*:active::-webkit-scrollbar-thumb,
-*:focus::-webkit-scrollbar-thumb,
-*:hover::-webkit-scrollbar-thumb {
-  visibility: visible;
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #424854;
 }
+
+/* Shimmer Animation for Skeletons */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  @apply before:absolute before:inset-0 before:-translate-x-full before:animate-[shimmer_2s_infinite] before:bg-gradient-to-r before:from-transparent before:via-white/10 before:to-transparent;
+}
+
 
 /* Hide default styling of details/summary */
 details > summary {

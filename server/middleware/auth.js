@@ -6,13 +6,13 @@ const User = require("../models/User");
 dotenv.config();
 
 // This function is used as middleware to authenticate user requests
+const { createClerkClient } = require("@clerk/clerk-sdk-node");
+const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
+
 exports.auth = async (req, res, next) => {
 	try {
-		// Extracting JWT from request cookies, body or header
-		const token =
-			req.cookies.token ||
-			req.body.token ||
-			req.header("Authorization").replace("Bearer ", "");
+		// Extracting JWT from request headers
+		const token = req.header("Authorization")?.replace("Bearer ", "");
 
 		// If JWT is missing, return 401 Unauthorized response
 		if (!token) {
@@ -20,13 +20,54 @@ exports.auth = async (req, res, next) => {
 		}
 
 		try {
-			// Verifying the JWT using the secret key stored in environment variables
-			const decode = await jwt.verify(token, process.env.JWT_SECRET);
-			console.log(decode);
-			// Storing the decoded JWT payload in the request object for further use
-			req.user = decode;
+			// Verifying the Clerk token
+			const decodedData = await clerkClient.verifyToken(token);
+			const clerkId = decodedData.sub;
+
+			// Get user details from Clerk
+			const clerkUser = await clerkClient.users.getUser(clerkId);
+			const email = clerkUser.emailAddresses[0].emailAddress;
+
+			// Check if user exists in MongoDB by clerkId
+			let dbUser = await User.findOne({ clerkId }).populate("additionalDetails");
+
+			if (!dbUser) {
+				// If not found by clerkId, try finding by email (for existing users pre-clerk)
+				dbUser = await User.findOne({ email }).populate("additionalDetails");
+
+				if (dbUser) {
+					// Link the account
+					dbUser.clerkId = clerkId;
+					await dbUser.save();
+				} else {
+					// Auto-create user if not found (Sync on the fly)
+					const profileDetails = await Profile.create({
+						gender: null,
+						dateOfBirth: null,
+						about: null,
+						contactNumber: null,
+					});
+
+					dbUser = await User.create({
+						firstName: clerkUser.firstName || "",
+						lastName: clerkUser.lastName || "",
+						email: email,
+						clerkId: clerkId,
+						accountType: clerkUser.unsafeMetadata?.accountType || "Student",
+						additionalDetails: profileDetails._id,
+						image: clerkUser.imageUrl,
+						password: "CLERK_MANAGED", // Placeholder for required field
+						approved: true,
+					});
+					dbUser = await dbUser.populate("additionalDetails");
+				}
+			}
+
+			// Storing the database user document in the request object
+			// Controllers expect req.user.id to be MongoDB _id
+			req.user = dbUser;
 		} catch (error) {
-			// If JWT verification fails, return 401 Unauthorized response
+			console.error("Clerk Token Verification Error:", error);
 			return res
 				.status(401)
 				.json({ success: false, message: "token is invalid" });
@@ -35,7 +76,7 @@ exports.auth = async (req, res, next) => {
 		// If JWT is valid, move on to the next middleware or request handler
 		next();
 	} catch (error) {
-		// If there is an error during the authentication process, return 401 Unauthorized response
+		console.error("Auth Middleware Error:", error);
 		return res.status(401).json({
 			success: false,
 			message: `Something Went Wrong While Validating the Token`,
@@ -44,9 +85,7 @@ exports.auth = async (req, res, next) => {
 };
 exports.isStudent = async (req, res, next) => {
 	try {
-		const userDetails = await User.findOne({ email: req.user.email });
-
-		if (userDetails.accountType !== "Student") {
+		if (req.user.accountType !== "Student") {
 			return res.status(401).json({
 				success: false,
 				message: "This is a Protected Route for Students",
@@ -61,9 +100,7 @@ exports.isStudent = async (req, res, next) => {
 };
 exports.isAdmin = async (req, res, next) => {
 	try {
-		const userDetails = await User.findOne({ email: req.user.email });
-
-		if (userDetails.accountType !== "Admin") {
+		if (req.user.accountType !== "Admin") {
 			return res.status(401).json({
 				success: false,
 				message: "This is a Protected Route for Admin",
@@ -78,12 +115,7 @@ exports.isAdmin = async (req, res, next) => {
 };
 exports.isInstructor = async (req, res, next) => {
 	try {
-		const userDetails = await User.findOne({ email: req.user.email });
-		console.log(userDetails);
-
-		console.log(userDetails.accountType);
-
-		if (userDetails.accountType !== "Instructor") {
+		if (req.user.accountType !== "Instructor") {
 			return res.status(401).json({
 				success: false,
 				message: "This is a Protected Route for Instructor",
