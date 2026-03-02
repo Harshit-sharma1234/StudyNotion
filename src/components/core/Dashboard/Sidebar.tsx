@@ -8,28 +8,42 @@ import { sidebarLinks } from "../../../data/dashboard-links"
 import { logout } from "../../../services/operations/authAPI"
 import ConfirmationModal from "../../Common/ConfirmationModal"
 import SidebarLink from "./SidebarLink"
+import Skeleton from "../../Common/Skeleton"
+
+interface RootState {
+  profile: {
+    user: any;
+    loading: boolean;
+  };
+  auth: {
+    loading: boolean;
+  };
+}
 
 export default function Sidebar() {
   const { user, loading: profileLoading } = useSelector(
-    (state) => state.profile
+    (state: RootState) => state.profile
   )
-  const { loading: authLoading } = useSelector((state) => state.auth)
+  const { loading: authLoading } = useSelector((state: RootState) => state.auth)
   const dispatch = useDispatch()
   const navigate = useNavigate()
   // to keep track of confirmation modal
   const [confirmationModal, setConfirmationModal] = useState(null)
 
+  // Industry-grade loading state for Sidebar
   if (profileLoading || authLoading) {
     return (
-      <div className="grid h-[calc(100vh-3.5rem)] min-w-[220px] items-center border-r-[1px] border-r-richblack-700 bg-richblack-800">
-        <div className="spinner"></div>
+      <div className="flex h-[calc(100vh-3.5rem)] min-w-[220px] flex-col border-r border-richblack-700 bg-richblack-800 p-6 space-y-4">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <Skeleton key={i} variant="rectangular" height={40} className="w-full" />
+        ))}
       </div>
     )
   }
 
   return (
     <>
-      <div className="flex h-[calc(100vh-3.5rem)] min-w-[220px] flex-col border-r-[1px] border-r-richblack-700 bg-richblack-800 py-10">
+      <div className="flex h-[calc(100vh-3.5rem)] min-w-[220px] flex-col border-r border-richblack-700 bg-richblack-800/60 backdrop-blur-md py-10 transition-all duration-300">
         <div className="flex flex-col">
           {sidebarLinks.map((link) => {
             if (link.type && user?.accountType !== link.type) return null
@@ -55,10 +69,10 @@ export default function Sidebar() {
                 btn2Handler: () => setConfirmationModal(null),
               })
             }
-            className="px-8 py-2 text-sm font-medium text-richblack-300"
+            className="group relative px-8 py-2 text-sm font-medium text-richblack-300 transition-colors duration-200 hover:text-richblack-100"
           >
             <div className="flex items-center gap-x-2">
-              <VscSignOut className="text-lg" />
+              <VscSignOut className="text-lg transition-transform duration-200 group-hover:-translate-x-1" />
               <span>Logout</span>
             </div>
           </button>

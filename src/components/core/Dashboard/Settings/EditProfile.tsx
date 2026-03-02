@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { useAuth } from "@clerk/clerk-react"
 import { useForm } from "react-hook-form"
 import { useDispatch, useSelector } from "react-redux"
 import { useNavigate } from "react-router-dom"
@@ -10,7 +11,7 @@ const genders = ["Male", "Female", "Non-Binary", "Prefer not to say", "Other"]
 
 export default function EditProfile() {
   const { user } = useSelector((state) => state.profile)
-  const { token } = useSelector((state) => state.auth)
+  const { getToken } = useAuth()
   const navigate = useNavigate()
   const dispatch = useDispatch()
 
@@ -23,6 +24,7 @@ export default function EditProfile() {
   const submitProfileForm = async (data) => {
     // console.log("Form Data - ", data)
     try {
+      const token = await getToken()
       dispatch(updateProfile(token, data))
     } catch (error) {
       console.log("ERROR MESSAGE - ", error.message)

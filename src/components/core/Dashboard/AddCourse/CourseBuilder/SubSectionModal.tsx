@@ -3,6 +3,7 @@ import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "react-hot-toast"
 import { RxCross2 } from "react-icons/rx"
+import { useAuth } from "@clerk/clerk-react"
 import { useDispatch, useSelector } from "react-redux"
 
 import {
@@ -60,6 +61,8 @@ export default function SubSectionModal({
     return false
   }
 
+  const { getToken } = useAuth()
+
   // handle the editing of subsection
   const handleEditSubsection = async () => {
     const currentValues = getValues()
@@ -67,7 +70,7 @@ export default function SubSectionModal({
     const formData = new FormData()
     // console.log("Values After Editing form values:", currentValues)
     formData.append("sectionId", modalData.sectionId)
-    formData.append("subSectionId", modalData._id)
+    formData.append("subSectionId", modalData.id)
     if (currentValues.lectureTitle !== modalData.title) {
       formData.append("title", currentValues.lectureTitle)
     }
@@ -78,12 +81,13 @@ export default function SubSectionModal({
       formData.append("video", currentValues.lectureVideo)
     }
     setLoading(true)
-    const result = await updateSubSection(formData, token)
+    const freshToken = await getToken()
+    const result = await updateSubSection(formData, freshToken)
     if (result) {
       // console.log("result", result)
       // update the structure of course
       const updatedCourseContent = course.courseContent.map((section) =>
-        section._id === modalData.sectionId ? result : section
+        section.id === modalData.sectionId ? result : section
       )
       const updatedCourse = { ...course, courseContent: updatedCourseContent }
       dispatch(setCourse(updatedCourse))
@@ -111,11 +115,12 @@ export default function SubSectionModal({
     formData.append("description", data.lectureDesc)
     formData.append("video", data.lectureVideo)
     setLoading(true)
-    const result = await createSubSection(formData, token)
+    const freshToken = await getToken()
+    const result = await createSubSection(formData, freshToken)
     if (result) {
       // update the structure of course
       const updatedCourseContent = course.courseContent.map((section) =>
-        section._id === modalData ? result : section
+        section.id === modalData ? result : section
       )
       const updatedCourse = { ...course, courseContent: updatedCourseContent }
       dispatch(setCourse(updatedCourse))
@@ -194,6 +199,7 @@ export default function SubSectionModal({
               <IconBtn
                 disabled={loading}
                 text={loading ? "Loading.." : edit ? "Save Changes" : "Save"}
+                type="submit"
               />
             </div>
           )}

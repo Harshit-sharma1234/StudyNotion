@@ -67,6 +67,11 @@ const userSchema = new mongoose.Schema(
         ref: "courseProgress",
       },
     ],
+    clerkId: {
+      type: String,
+      unique: true,
+      sparse: true,
+    },
 
     // Add timestamps for when the document is created and last modified
   },

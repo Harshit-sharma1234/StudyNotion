@@ -1,18 +1,11 @@
-const Course = require("../models/Course")
-const Category = require("../models/Category")
-const Section = require("../models/Section")
-const SubSection = require("../models/SubSection")
-const User = require("../models/User")
+const supabase = require("../config/supabase")
 const { uploadImageToCloudinary } = require("../utils/imageUploader")
-const CourseProgress = require("../models/CourseProgress")
 const { convertSecondsToDuration } = require("../utils/secToDuration")
+
 // Function to create a new course
 exports.createCourse = async (req, res) => {
   try {
-    // Get user ID from request object
     const userId = req.user.id
-
-    // Get all required fields from request body
     let {
       courseName,
       courseDescription,
@@ -23,106 +16,76 @@ exports.createCourse = async (req, res) => {
       status,
       instructions: _instructions,
     } = req.body
-    // Get thumbnail image from request files
+
     const thumbnail = req.files.thumbnailImage
 
-    // Convert the tag and instructions from stringified Array to Array
     const tag = JSON.parse(_tag)
     const instructions = JSON.parse(_instructions)
 
-    console.log("tag", tag)
-    console.log("instructions", instructions)
+    if (!courseName || !courseDescription || !whatYouWillLearn || !price || !tag.length || !thumbnail || !category || !instructions.length) {
+      return res.status(400).json({ success: false, message: "All Fields are Mandatory" })
+    }
 
-    // Check if any of the required fields are missing
-    if (
-      !courseName ||
-      !courseDescription ||
-      !whatYouWillLearn ||
-      !price ||
-      !tag.length ||
-      !thumbnail ||
-      !category ||
-      !instructions.length
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "All Fields are Mandatory",
+    if (!status) status = "Draft"
+
+    // Verify instructor exists and is an instructor
+    const { data: instructorDetails, error: instructorError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", userId)
+      .eq("account_type", "Instructor")
+      .single()
+
+    if (instructorError || !instructorDetails) {
+      return res.status(404).json({ success: false, message: "Instructor Details Not Found" })
+    }
+
+    // Verify category exists
+    const { data: categoryDetails, error: categoryError } = await supabase
+      .from("categories")
+      .select("*")
+      .eq("id", category)
+      .single()
+
+    if (categoryError || !categoryDetails) {
+      return res.status(404).json({ success: false, message: "Category Details Not Found" })
+    }
+
+    // Upload Thumbnail to Cloudinary
+    const thumbnailImage = await uploadImageToCloudinary(thumbnail, process.env.FOLDER_NAME)
+
+    // Create new course in Supabase
+    const { data: newCourse, error: courseCreateError } = await supabase
+      .from("courses")
+      .insert({
+        course_name: courseName,
+        course_description: courseDescription,
+        instructor_id: userId,
+        what_you_will_learn: whatYouWillLearn,
+        price,
+        tags: tag,
+        category_id: category,
+        thumbnail: thumbnailImage.secure_url,
+        status: status,
+        instructions,
       })
-    }
-    if (!status || status === undefined) {
-      status = "Draft"
-    }
-    // Check if the user is an instructor
-    const instructorDetails = await User.findById(userId, {
-      accountType: "Instructor",
-    })
+      .select(`
+        *,
+        courseContent:sections (
+          *,
+          subSection:sub_sections (*)
+        )
+      `)
+      .single()
 
-    if (!instructorDetails) {
-      return res.status(404).json({
-        success: false,
-        message: "Instructor Details Not Found",
-      })
-    }
+    if (courseCreateError) throw courseCreateError
 
-    // Check if the tag given is valid
-    const categoryDetails = await Category.findById(category)
-    if (!categoryDetails) {
-      return res.status(404).json({
-        success: false,
-        message: "Category Details Not Found",
-      })
-    }
-    // Upload the Thumbnail to Cloudinary
-    const thumbnailImage = await uploadImageToCloudinary(
-      thumbnail,
-      process.env.FOLDER_NAME
-    )
-    console.log(thumbnailImage)
-    // Create a new course with the given details
-    const newCourse = await Course.create({
-      courseName,
-      courseDescription,
-      instructor: instructorDetails._id,
-      whatYouWillLearn: whatYouWillLearn,
-      price,
-      tag,
-      category: categoryDetails._id,
-      thumbnail: thumbnailImage.secure_url,
-      status: status,
-      instructions,
-    })
-
-    // Add the new course to the User Schema of the Instructor
-    await User.findByIdAndUpdate(
-      {
-        _id: instructorDetails._id,
-      },
-      {
-        $push: {
-          courses: newCourse._id,
-        },
-      },
-      { new: true }
-    )
-    // Add the new course to the Categories
-    const categoryDetails2 = await Category.findByIdAndUpdate(
-      { _id: category },
-      {
-        $push: {
-          courses: newCourse._id,
-        },
-      },
-      { new: true }
-    )
-    console.log("HEREEEEEEEE", categoryDetails2)
-    // Return the new course and a success message
     res.status(200).json({
       success: true,
       data: newCourse,
       message: "Course Created Successfully",
     })
   } catch (error) {
-    // Handle any errors that occur during the creation of the course
     console.error(error)
     res.status(500).json({
       success: false,
@@ -131,64 +94,69 @@ exports.createCourse = async (req, res) => {
     })
   }
 }
+
 // Edit Course Details
 exports.editCourse = async (req, res) => {
   try {
     const { courseId } = req.body
     const updates = req.body
-    const course = await Course.findById(courseId)
 
-    if (!course) {
+    // Check if course exists
+    const { data: course, error: fetchError } = await supabase
+      .from("courses")
+      .select("*")
+      .eq("id", courseId)
+      .single()
+
+    if (fetchError || !course) {
       return res.status(404).json({ error: "Course not found" })
     }
 
-    // If Thumbnail Image is found, update it
-    if (req.files) {
-      console.log("thumbnail update")
+    const updateData = {}
+
+    // Map request body to SQL column names
+    if (updates.courseName) updateData.course_name = updates.courseName
+    if (updates.courseDescription) updateData.course_description = updates.courseDescription
+    if (updates.whatYouWillLearn) updateData.what_you_will_learn = updates.whatYouWillLearn
+    if (updates.price) updateData.price = updates.price
+    if (updates.category) updateData.category_id = updates.category
+    if (updates.status) updateData.status = updates.status
+    if (updates.tag) updateData.tags = JSON.parse(updates.tag)
+    if (updates.instructions) updateData.instructions = JSON.parse(updates.instructions)
+
+    // Handle Thumbnail Update
+    if (req.files && req.files.thumbnailImage) {
       const thumbnail = req.files.thumbnailImage
-      const thumbnailImage = await uploadImageToCloudinary(
-        thumbnail,
-        process.env.FOLDER_NAME
-      )
-      course.thumbnail = thumbnailImage.secure_url
+      const thumbnailImage = await uploadImageToCloudinary(thumbnail, process.env.FOLDER_NAME)
+      updateData.thumbnail = thumbnailImage.secure_url
     }
 
-    // Update only the fields that are present in the request body
-    for (const key in updates) {
-      if (updates.hasOwnProperty(key)) {
-        if (key === "tag" || key === "instructions") {
-          course[key] = JSON.parse(updates[key])
-        } else {
-          course[key] = updates[key]
-        }
-      }
-    }
+    // Update Course in Supabase
+    const { data: updatedCourseRaw, error: updateError } = await supabase
+      .from("courses")
+      .update(updateData)
+      .eq("id", courseId)
+      .select(`
+        *,
+        users!instructor_id (
+          *,
+          profiles (*)
+        ),
+        categories (*),
+        ratings_reviews (*),
+        courseContent:sections (
+          *,
+          subSection:sub_sections (*)
+        )
+      `)
+      .single()
 
-    await course.save()
-
-    const updatedCourse = await Course.findOne({
-      _id: courseId,
-    })
-      .populate({
-        path: "instructor",
-        populate: {
-          path: "additionalDetails",
-        },
-      })
-      .populate("category")
-      .populate("ratingAndReviews")
-      .populate({
-        path: "courseContent",
-        populate: {
-          path: "subSection",
-        },
-      })
-      .exec()
+    if (updateError) throw updateError
 
     res.json({
       success: true,
       message: "Course updated successfully",
-      data: updatedCourse,
+      data: updatedCourseRaw,
     })
   } catch (error) {
     console.error(error)
@@ -202,19 +170,26 @@ exports.editCourse = async (req, res) => {
 // Get Course List
 exports.getAllCourses = async (req, res) => {
   try {
-    const allCourses = await Course.find(
-      { status: "Published" },
-      {
-        courseName: true,
-        price: true,
-        thumbnail: true,
-        instructor: true,
-        ratingAndReviews: true,
-        studentsEnrolled: true,
-      }
-    )
-      .populate("instructor")
-      .exec()
+    const { data: allCourses, error } = await supabase
+      .from("courses")
+      .select(`
+        id,
+        course_name,
+        price,
+        thumbnail,
+        instructor_id,
+        status,
+        users!instructor_id (
+          id,
+          first_name,
+          last_name,
+          image
+        ),
+        ratings_reviews (count)
+      `)
+      .eq("status", "Published")
+
+    if (error) throw error
 
     return res.status(200).json({
       success: true,
@@ -229,100 +204,42 @@ exports.getAllCourses = async (req, res) => {
     })
   }
 }
-// Get One Single Course Details
-// exports.getCourseDetails = async (req, res) => {
-//   try {
-//     const { courseId } = req.body
-//     const courseDetails = await Course.findOne({
-//       _id: courseId,
-//     })
-//       .populate({
-//         path: "instructor",
-//         populate: {
-//           path: "additionalDetails",
-//         },
-//       })
-//       .populate("category")
-//       .populate("ratingAndReviews")
-//       .populate({
-//         path: "courseContent",
-//         populate: {
-//           path: "subSection",
-//         },
-//       })
-//       .exec()
-//     // console.log(
-//     //   "###################################### course details : ",
-//     //   courseDetails,
-//     //   courseId
-//     // );
-//     if (!courseDetails || !courseDetails.length) {
-//       return res.status(400).json({
-//         success: false,
-//         message: `Could not find course with id: ${courseId}`,
-//       })
-//     }
 
-//     if (courseDetails.status === "Draft") {
-//       return res.status(403).json({
-//         success: false,
-//         message: `Accessing a draft course is forbidden`,
-//       })
-//     }
-
-//     return res.status(200).json({
-//       success: true,
-//       data: courseDetails,
-//     })
-//   } catch (error) {
-//     return res.status(500).json({
-//       success: false,
-//       message: error.message,
-//     })
-//   }
-// }
 exports.getCourseDetails = async (req, res) => {
   try {
     const { courseId } = req.body
-    const courseDetails = await Course.findOne({
-      _id: courseId,
-    })
-      .populate({
-        path: "instructor",
-        populate: {
-          path: "additionalDetails",
-        },
-      })
-      .populate("category")
-      .populate("ratingAndReviews")
-      .populate({
-        path: "courseContent",
-        populate: {
-          path: "subSection",
-          select: "-videoUrl",
-        },
-      })
-      .exec()
+    const { data: courseDetails, error } = await supabase
+      .from("courses")
+      .select(`
+        *,
+        users!instructor_id (
+          id,
+          first_name,
+          last_name,
+          image,
+          profiles (*)
+        ),
+        categories (*),
+        ratings_reviews (*),
+        courseContent:sections (
+          *,
+          subSection:sub_sections (*)
+        )
+      `)
+      .eq("id", courseId)
+      .single()
 
-    if (!courseDetails) {
+    if (error || !courseDetails) {
       return res.status(400).json({
         success: false,
         message: `Could not find course with id: ${courseId}`,
       })
     }
 
-    // if (courseDetails.status === "Draft") {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: `Accessing a draft course is forbidden`,
-    //   });
-    // }
-
     let totalDurationInSeconds = 0
-    courseDetails.courseContent.forEach((content) => {
-      content.subSection.forEach((subSection) => {
-        const timeDurationInSeconds = parseInt(subSection.timeDuration)
-        totalDurationInSeconds += timeDurationInSeconds
+    courseDetails.sections?.forEach((section) => {
+      section.sub_sections?.forEach((subSection) => {
+        totalDurationInSeconds += parseInt(subSection.time_duration || 0)
       })
     })
 
@@ -342,55 +259,56 @@ exports.getCourseDetails = async (req, res) => {
     })
   }
 }
+
 exports.getFullCourseDetails = async (req, res) => {
   try {
     const { courseId } = req.body
     const userId = req.user.id
-    const courseDetails = await Course.findOne({
-      _id: courseId,
-    })
-      .populate({
-        path: "instructor",
-        populate: {
-          path: "additionalDetails",
-        },
-      })
-      .populate("category")
-      .populate("ratingAndReviews")
-      .populate({
-        path: "courseContent",
-        populate: {
-          path: "subSection",
-        },
-      })
-      .exec()
 
-    let courseProgressCount = await CourseProgress.findOne({
-      courseID: courseId,
-      userId: userId,
-    })
+    // Fetch course details
+    const { data: courseDetails, error } = await supabase
+      .from("courses")
+      .select(`
+        *,
+        users!instructor_id (
+          id,
+          first_name,
+          last_name,
+          image,
+          profiles (*)
+        ),
+        categories (*),
+        ratings_reviews (*),
+        courseContent:sections (
+          *,
+          subSection:sub_sections (*)
+        )
+      `)
+      .eq("id", courseId)
+      .single()
 
-    console.log("courseProgressCount : ", courseProgressCount)
-
-    if (!courseDetails) {
+    if (error || !courseDetails) {
       return res.status(400).json({
         success: false,
         message: `Could not find course with id: ${courseId}`,
       })
     }
 
-    // if (courseDetails.status === "Draft") {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: `Accessing a draft course is forbidden`,
-    //   });
-    // }
+    // Fetch progress
+    const { data: courseProgress, error: progressError } = await supabase
+      .from("course_progress")
+      .select(`
+        *,
+        completed_videos (sub_section_id)
+      `)
+      .eq("course_id", courseId)
+      .eq("user_id", userId)
+      .single()
 
     let totalDurationInSeconds = 0
-    courseDetails.courseContent.forEach((content) => {
-      content.subSection.forEach((subSection) => {
-        const timeDurationInSeconds = parseInt(subSection.timeDuration)
-        totalDurationInSeconds += timeDurationInSeconds
+    courseDetails.sections?.forEach((section) => {
+      section.sub_sections?.forEach((subSection) => {
+        totalDurationInSeconds += parseInt(subSection.time_duration || 0)
       })
     })
 
@@ -401,9 +319,7 @@ exports.getFullCourseDetails = async (req, res) => {
       data: {
         courseDetails,
         totalDuration,
-        completedVideos: courseProgressCount?.completedVideos
-          ? courseProgressCount?.completedVideos
-          : [],
+        completedVideos: courseProgress?.completed_videos || [],
       },
     })
   } catch (error) {
@@ -417,15 +333,16 @@ exports.getFullCourseDetails = async (req, res) => {
 // Get a list of Course for a given Instructor
 exports.getInstructorCourses = async (req, res) => {
   try {
-    // Get the instructor ID from the authenticated user or request body
     const instructorId = req.user.id
 
-    // Find all courses belonging to the instructor
-    const instructorCourses = await Course.find({
-      instructor: instructorId,
-    }).sort({ createdAt: -1 })
+    const { data: instructorCourses, error } = await supabase
+      .from("courses")
+      .select("*")
+      .eq("instructor_id", instructorId)
+      .order("created_at", { ascending: false })
 
-    // Return the instructor's courses
+    if (error) throw error
+
     res.status(200).json({
       success: true,
       data: instructorCourses,
@@ -439,43 +356,30 @@ exports.getInstructorCourses = async (req, res) => {
     })
   }
 }
+
 // Delete the Course
 exports.deleteCourse = async (req, res) => {
   try {
     const { courseId } = req.body
 
-    // Find the course
-    const course = await Course.findById(courseId)
-    if (!course) {
+    // Check if course exists
+    const { data: course, error: fetchError } = await supabase
+      .from("courses")
+      .select("id")
+      .eq("id", courseId)
+      .single()
+
+    if (fetchError || !course) {
       return res.status(404).json({ message: "Course not found" })
     }
 
-    // Unenroll students from the course
-    const studentsEnrolled = course.studentsEnroled
-    for (const studentId of studentsEnrolled) {
-      await User.findByIdAndUpdate(studentId, {
-        $pull: { courses: courseId },
-      })
-    }
+    // Delete the course (Cascading deletes will handle Sections, SubSections, Enrollments, Progress, Ratings)
+    const { error: deleteError } = await supabase
+      .from("courses")
+      .delete()
+      .eq("id", courseId)
 
-    // Delete sections and sub-sections
-    const courseSections = course.courseContent
-    for (const sectionId of courseSections) {
-      // Delete sub-sections of the section
-      const section = await Section.findById(sectionId)
-      if (section) {
-        const subSections = section.subSection
-        for (const subSectionId of subSections) {
-          await SubSection.findByIdAndDelete(subSectionId)
-        }
-      }
-
-      // Delete the section
-      await Section.findByIdAndDelete(sectionId)
-    }
-
-    // Delete the course
-    await Course.findByIdAndDelete(courseId)
+    if (deleteError) throw deleteError
 
     return res.status(200).json({
       success: true,

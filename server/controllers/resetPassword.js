@@ -1,30 +1,41 @@
-const User = require("../models/User")
+const supabase = require("../config/supabase")
 const mailSender = require("../utils/mailSender")
 const bcrypt = require("bcrypt")
 const crypto = require("crypto")
+
 exports.resetPasswordToken = async (req, res) => {
   try {
     const email = req.body.email
-    const user = await User.findOne({ email: email })
-    if (!user) {
+
+    // Find user in Supabase
+    const { data: user, error: fetchError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email)
+      .single()
+
+    if (fetchError || !user) {
       return res.json({
         success: false,
         message: `This Email: ${email} is not Registered With Us Enter a Valid Email `,
       })
     }
+
     const token = crypto.randomBytes(20).toString("hex")
 
-    const updatedDetails = await User.findOneAndUpdate(
-      { email: email },
-      {
+    // Update token and expiry in Supabase
+    const { data: updatedDetails, error: updateError } = await supabase
+      .from("users")
+      .update({
         token: token,
-        resetPasswordExpires: Date.now() + 3600000,
-      },
-      { new: true }
-    )
-    console.log("DETAILS", updatedDetails)
+        reset_password_expires: new Date(Date.now() + 3600000).toISOString(),
+      })
+      .eq("email", email)
+      .select()
+      .single()
 
-    // const url = `http://localhost:3000/update-password/${token}`
+    if (updateError) throw updateError
+
     const url = `https://studynotion-edtech-project.vercel.app/update-password/${token}`
 
     await mailSender(
@@ -35,8 +46,7 @@ exports.resetPasswordToken = async (req, res) => {
 
     res.json({
       success: true,
-      message:
-        "Email Sent Successfully, Please Check Your Email to Continue Further",
+      message: "Email Sent Successfully, Please Check Your Email to Continue Further",
     })
   } catch (error) {
     return res.json({
@@ -57,25 +67,38 @@ exports.resetPassword = async (req, res) => {
         message: "Password and Confirm Password Does not Match",
       })
     }
-    const userDetails = await User.findOne({ token: token })
-    if (!userDetails) {
+
+    // Find user by token in Supabase
+    const { data: userDetails, error: fetchError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("token", token)
+      .single()
+
+    if (fetchError || !userDetails) {
       return res.json({
         success: false,
         message: "Token is Invalid",
       })
     }
-    if (!(userDetails.resetPasswordExpires > Date.now())) {
+
+    if (!(new Date(userDetails.reset_password_expires) > new Date())) {
       return res.status(403).json({
         success: false,
         message: `Token is Expired, Please Regenerate Your Token`,
       })
     }
+
     const encryptedPassword = await bcrypt.hash(password, 10)
-    await User.findOneAndUpdate(
-      { token: token },
-      { password: encryptedPassword },
-      { new: true }
-    )
+
+    // Update password in Supabase
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({ password: encryptedPassword })
+      .eq("token", token)
+
+    if (updateError) throw updateError
+
     res.json({
       success: true,
       message: `Password Reset Successful`,

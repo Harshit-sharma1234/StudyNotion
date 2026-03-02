@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { useEffect, useState } from "react"
+import { useAuth } from "@clerk/clerk-react"
 import { useDispatch, useSelector } from "react-redux"
 import { Outlet, useParams } from "react-router-dom"
 
@@ -14,13 +15,14 @@ import {
 } from "../slices/viewCourseSlice"
 
 export default function ViewCourse() {
+  const { getToken } = useAuth()
   const { courseId } = useParams()
-  const { token } = useSelector((state) => state.auth)
   const dispatch = useDispatch()
   const [reviewModal, setReviewModal] = useState(false)
 
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
+      const token = await getToken()
       const courseData = await getFullDetailsOfCourse(courseId, token)
       // console.log("Course Data here... ", courseData.courseDetails)
       dispatch(setCourseSectionData(courseData.courseDetails.courseContent))

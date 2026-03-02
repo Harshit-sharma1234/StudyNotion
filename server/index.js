@@ -5,7 +5,6 @@ const app = express();
 const dotenv = require("dotenv");
 dotenv.config();
 
-
 const userRoutes = require("./routes/user");
 const profileRoutes = require("./routes/profile");
 const courseRoutes = require("./routes/Course");
@@ -26,7 +25,7 @@ const PORT = process.env.PORT || 4000;
 
 
 // Connecting to database
-database.connect();
+// database.connect(); // MongoDB replaced by Supabase migration
 
 // Middlewares
 app.use(express.json());
@@ -63,7 +62,7 @@ app.get("/", (req, res) => {
 });
 
 // Listening to the server
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
 	console.log(`App is listening at ${PORT}`);
 });
 

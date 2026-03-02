@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useUser, useAuth } from "@clerk/clerk-react";
 import { useDispatch, useSelector } from "react-redux";
 import { setUser } from "../../../slices/profileSlice";
+import { setToken } from "../../../slices/authSlice";
 import { useNavigate, useLocation } from "react-router-dom";
 
 /**
@@ -12,7 +13,7 @@ import { useNavigate, useLocation } from "react-router-dom";
  */
 const ClerkRoleSync = () => {
     const { user, isLoaded: userLoaded } = useUser();
-    const { isSignedIn, isLoaded: authLoaded } = useAuth();
+    const { isSignedIn, isLoaded: authLoaded, getToken } = useAuth();
     const dispatch = useDispatch();
     const navigate = useNavigate();
     const location = useLocation();
@@ -21,6 +22,16 @@ const ClerkRoleSync = () => {
     useEffect(() => {
         if (authLoaded && userLoaded) {
             if (isSignedIn && user) {
+                // Sync token
+                const syncToken = async () => {
+                    const token = await getToken();
+                    if (token) {
+                        dispatch(setToken(token));
+                        localStorage.setItem("token", JSON.stringify(token));
+                    }
+                };
+                syncToken();
+
                 // Construct user object compatible with the app's existing logic
                 // We look in unsafeMetadata for the accountType (role)
                 const accountType = user.unsafeMetadata?.accountType;

@@ -7,15 +7,18 @@ import { useNavigate } from "react-router-dom"
 
 import { getUserEnrolledCourses } from "../../../services/operations/profileAPI"
 
+import { useAuth } from "@clerk/clerk-react"
+
 export default function EnrolledCourses() {
-  const { token } = useSelector((state) => state.auth)
+  const { getToken } = useAuth()
   const navigate = useNavigate()
 
   const [enrolledCourses, setEnrolledCourses] = useState(null)
 
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       try {
+        const token = await getToken()
         const res = await getUserEnrolledCourses(token) // Getting all the published and the drafted courses
 
         // Filtering the published course out
@@ -31,7 +34,7 @@ export default function EnrolledCourses() {
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [getToken])
 
   return (
     <>
@@ -56,9 +59,8 @@ export default function EnrolledCourses() {
           {/* Course Names */}
           {enrolledCourses.map((course, i, arr) => (
             <div
-              className={`flex items-center border border-richblack-700 ${
-                i === arr.length - 1 ? "rounded-b-lg" : "rounded-none"
-              }`}
+              className={`flex items-center border border-richblack-700 ${i === arr.length - 1 ? "rounded-b-lg" : "rounded-none"
+                }`}
               key={i}
             >
               <div

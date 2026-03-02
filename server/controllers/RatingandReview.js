@@ -1,6 +1,4 @@
-const RatingAndReview = require("../models/RatingandReview")
-const Course = require("../models/Course")
-const mongoose = require("mongoose")
+const supabase = require("../config/supabase")
 
 // Create a new rating and review
 exports.createRating = async (req, res) => {
@@ -9,13 +7,14 @@ exports.createRating = async (req, res) => {
     const { rating, review, courseId } = req.body
 
     // Check if the user is enrolled in the course
+    const { data: enrollment, error: enrollError } = await supabase
+      .from("course_enrollments")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("course_id", courseId)
+      .single()
 
-    const courseDetails = await Course.findOne({
-      _id: courseId,
-      studentsEnroled: { $elemMatch: { $eq: userId } },
-    })
-
-    if (!courseDetails) {
+    if (enrollError || !enrollment) {
       return res.status(404).json({
         success: false,
         message: "Student is not enrolled in this course",
@@ -23,10 +22,12 @@ exports.createRating = async (req, res) => {
     }
 
     // Check if the user has already reviewed the course
-    const alreadyReviewed = await RatingAndReview.findOne({
-      user: userId,
-      course: courseId,
-    })
+    const { data: alreadyReviewed, error: reviewCheckError } = await supabase
+      .from("ratings_reviews")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("course_id", courseId)
+      .single()
 
     if (alreadyReviewed) {
       return res.status(403).json({
@@ -36,20 +37,18 @@ exports.createRating = async (req, res) => {
     }
 
     // Create a new rating and review
-    const ratingReview = await RatingAndReview.create({
-      rating,
-      review,
-      course: courseId,
-      user: userId,
-    })
+    const { data: ratingReview, error: insertError } = await supabase
+      .from("ratings_reviews")
+      .insert({
+        rating,
+        review,
+        course_id: courseId,
+        user_id: userId,
+      })
+      .select()
+      .single()
 
-    // Add the rating and review to the course
-    await Course.findByIdAndUpdate(courseId, {
-      $push: {
-        ratingAndReviews: ratingReview,
-      },
-    })
-    await courseDetails.save()
+    if (insertError) throw insertError
 
     return res.status(201).json({
       success: true,
@@ -71,25 +70,20 @@ exports.getAverageRating = async (req, res) => {
   try {
     const courseId = req.body.courseId
 
-    // Calculate the average rating using the MongoDB aggregation pipeline
-    const result = await RatingAndReview.aggregate([
-      {
-        $match: {
-          course: new mongoose.Types.ObjectId(courseId), // Convert courseId to ObjectId
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          averageRating: { $avg: "$rating" },
-        },
-      },
-    ])
+    const { data: ratings, error } = await supabase
+      .from("ratings_reviews")
+      .select("rating")
+      .eq("course_id", courseId)
 
-    if (result.length > 0) {
+    if (error) throw error
+
+    if (ratings.length > 0) {
+      const sum = ratings.reduce((acc, curr) => acc + curr.rating, 0)
+      const averageRating = sum / ratings.length
+
       return res.status(200).json({
         success: true,
-        averageRating: result[0].averageRating,
+        averageRating: averageRating,
       })
     }
 
@@ -108,17 +102,23 @@ exports.getAverageRating = async (req, res) => {
 // Get all rating and reviews
 exports.getAllRatingReview = async (req, res) => {
   try {
-    const allReviews = await RatingAndReview.find({})
-      .sort({ rating: "desc" })
-      .populate({
-        path: "user",
-        select: "firstName lastName email image", // Specify the fields you want to populate from the "Profile" model
-      })
-      .populate({
-        path: "course",
-        select: "courseName", //Specify the fields you want to populate from the "Course" model
-      })
-      .exec()
+    const { data: allReviews, error } = await supabase
+      .from("ratings_reviews")
+      .select(`
+        *,
+        users!user_id (
+          first_name,
+          last_name,
+          email,
+          image
+        ),
+        courses!course_id (
+          course_name
+        )
+      `)
+      .order("rating", { ascending: false })
+
+    if (error) throw error
 
     res.status(200).json({
       success: true,

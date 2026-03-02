@@ -1,11 +1,35 @@
-const Profile = require("../models/Profile")
-const CourseProgress = require("../models/CourseProgress")
-
-const Course = require("../models/Course")
-const User = require("../models/User")
+const supabase = require("../config/supabase")
 const { uploadImageToCloudinary } = require("../utils/imageUploader")
-const mongoose = require("mongoose")
 const { convertSecondsToDuration } = require("../utils/secToDuration")
+const { createClerkClient } = require("@clerk/clerk-sdk-node");
+const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
+
+// Utility to map Supabase user record to frontend format
+const mapUserToFrontend = (dbUser) => {
+  if (!dbUser) return null
+  return {
+    id: dbUser.id,
+    clerkId: dbUser.clerk_id,
+    firstName: dbUser.first_name,
+    lastName: dbUser.last_name,
+    email: dbUser.email,
+    accountType: dbUser.account_type,
+    active: dbUser.active,
+    approved: dbUser.approved,
+    image: dbUser.image,
+    additionalDetails: dbUser.profiles
+      ? {
+        id: dbUser.profiles.id,
+        gender: dbUser.profiles.gender,
+        dateOfBirth: dbUser.profiles.date_of_birth,
+        about: dbUser.profiles.about,
+        contactNumber: dbUser.profiles.contact_number,
+      }
+      : null,
+  }
+}
+
+
 // Method for updating a profile
 exports.updateProfile = async (req, res) => {
   try {
@@ -17,36 +41,69 @@ exports.updateProfile = async (req, res) => {
       contactNumber = "",
       gender = "",
     } = req.body
-    const id = req.user.id
+    const id = req.user.id // This is the UUID from Supabase 'users' table
 
-    // Find the profile by id
-    const userDetails = await User.findById(id)
-    const profile = await Profile.findById(userDetails.additionalDetails)
+    // Update the User details (first_name, last_name)
+    const { data: updatedUser, error: userError } = await supabase
+      .from("users")
+      .update({
+        first_name: firstName,
+        last_name: lastName,
+      })
+      .eq("id", id)
+      .select()
+      .single()
 
-    const user = await User.findByIdAndUpdate(id, {
-      firstName,
-      lastName,
-    })
-    await user.save()
+    if (userError) throw userError
 
-    // Update the profile fields
-    profile.dateOfBirth = dateOfBirth
-    profile.about = about
-    profile.contactNumber = contactNumber
-    profile.gender = gender
+    // Check if profile exists, if not create one
+    if (!updatedUser.additional_details_id) {
+      const { data: newProfile, error: profileError } = await supabase
+        .from("profiles")
+        .insert({
+          date_of_birth: dateOfBirth,
+          about: about,
+          contact_number: contactNumber,
+          gender: gender,
+        })
+        .select()
+        .single();
 
-    // Save the updated profile
-    await profile.save()
+      if (profileError) throw profileError;
 
-    // Find the updated user details
-    const updatedUserDetails = await User.findById(id)
-      .populate("additionalDetails")
-      .exec()
+      await supabase
+        .from("users")
+        .update({ additional_details_id: newProfile.id })
+        .eq("id", id);
+    } else {
+      // Update the Profile details
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({
+          date_of_birth: dateOfBirth,
+          about: about,
+          contact_number: contactNumber,
+          gender: gender,
+        })
+        .eq("id", updatedUser.additional_details_id)
+
+      if (profileError) throw profileError
+    }
+
+
+    // Fetch the combined user details
+    const { data: fullUserDetails, error: fetchError } = await supabase
+      .from("users")
+      .select("*, profiles(*)")
+      .eq("id", id)
+      .single()
+
+    if (fetchError) throw fetchError
 
     return res.json({
       success: true,
       message: "Profile updated successfully",
-      updatedUserDetails,
+      updatedUserDetails: mapUserToFrontend(fullUserDetails),
     })
   } catch (error) {
     console.log(error)
@@ -60,32 +117,39 @@ exports.updateProfile = async (req, res) => {
 exports.deleteAccount = async (req, res) => {
   try {
     const id = req.user.id
-    console.log(id)
-    const user = await User.findById({ _id: id })
-    if (!user) {
+
+    // Check if user exists
+    const { data: user, error: userFetchError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", id)
+      .single()
+
+    if (userFetchError || !user) {
       return res.status(404).json({
         success: false,
         message: "User not found",
       })
     }
-    // Delete Assosiated Profile with the User
-    await Profile.findByIdAndDelete({
-      _id: new mongoose.Types.ObjectId(user.additionalDetails),
-    })
-    for (const courseId of user.courses) {
-      await Course.findByIdAndUpdate(
-        courseId,
-        { $pull: { studentsEnroled: id } },
-        { new: true }
-      )
+
+    // Delete Associated Profile
+    if (user.additional_details_id) {
+      await supabase.from("profiles").delete().eq("id", user.additional_details_id)
     }
-    // Now Delete User
-    await User.findByIdAndDelete({ _id: id })
+
+    // Note: Course enrollments and progress deletion should ideally be handled by 
+    // ON DELETE CASCADE in the database schema, but for explicit safety:
+    await supabase.from("course_enrollments").delete().eq("user_id", id)
+    await supabase.from("course_progress").delete().eq("user_id", id)
+
+    // Delete User
+    const { error: deleteError } = await supabase.from("users").delete().eq("id", id)
+    if (deleteError) throw deleteError
+
     res.status(200).json({
       success: true,
       message: "User deleted successfully",
     })
-    await CourseProgress.deleteMany({ userId: id })
   } catch (error) {
     console.log(error)
     res
@@ -97,43 +161,83 @@ exports.deleteAccount = async (req, res) => {
 exports.getAllUserDetails = async (req, res) => {
   try {
     const id = req.user.id
-    const userDetails = await User.findById(id)
-      .populate("additionalDetails")
-      .exec()
-    console.log(userDetails)
+    const { data: userDetails, error } = await supabase
+      .from("users")
+      .select("*, profiles(*)")
+      .eq("id", id)
+      .single()
+
+    if (error) throw error
+
     res.status(200).json({
       success: true,
       message: "User Data fetched successfully",
-      data: userDetails,
+      data: mapUserToFrontend(userDetails),
     })
   } catch (error) {
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: error.message || "Failed to fetch user details",
     })
   }
 }
 
 exports.updateDisplayPicture = async (req, res) => {
   try {
-    const displayPicture = req.files.displayPicture
     const userId = req.user.id
+
+    if (!req.files || !req.files.displayPicture) {
+      return res.status(400).json({
+        success: false,
+        message: "No display picture file provided",
+      })
+    }
+
+    const displayPicture = req.files.displayPicture
+    const clerkId = req.user.clerkId
+
+    // 1. Upload to Cloudinary
     const image = await uploadImageToCloudinary(
       displayPicture,
       process.env.FOLDER_NAME,
       1000,
-      1000
+      80
     )
-    console.log(image)
-    const updatedProfile = await User.findByIdAndUpdate(
-      { _id: userId },
-      { image: image.secure_url },
-      { new: true }
-    )
-    res.send({
+
+    // 2. Sync with Clerk
+    try {
+      if (clerkId) {
+        const fs = require("fs");
+        const fileData = fs.readFileSync(displayPicture.tempFilePath);
+        await clerkClient.users.updateUserProfileImage(clerkId, {
+          file: new Blob([fileData], { type: displayPicture.mimetype })
+        });
+      }
+    } catch (clerkError) {
+      console.error("Clerk Sync Error:", clerkError);
+    }
+
+    // 3. Update local database (Supabase)
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({ image: image.secure_url })
+      .eq("id", userId)
+
+    if (updateError) throw updateError
+
+    // Fetch the combined user details
+    const { data: fullUserDetails, error: fetchError } = await supabase
+      .from("users")
+      .select("*, profiles(*)")
+      .eq("id", userId)
+      .single()
+
+    if (fetchError) throw fetchError
+
+    return res.status(200).json({
       success: true,
       message: `Image Updated successfully`,
-      data: updatedProfile,
+      data: mapUserToFrontend(fullUserDetails),
     })
   } catch (error) {
     return res.status(500).json({
@@ -146,60 +250,71 @@ exports.updateDisplayPicture = async (req, res) => {
 exports.getEnrolledCourses = async (req, res) => {
   try {
     const userId = req.user.id
-    let userDetails = await User.findOne({
-      _id: userId,
-    })
-      .populate({
-        path: "courses",
-        populate: {
-          path: "courseContent",
-          populate: {
-            path: "subSection",
-          },
-        },
-      })
-      .exec()
-    userDetails = userDetails.toObject()
-    var SubsectionLength = 0
-    for (var i = 0; i < userDetails.courses.length; i++) {
-      let totalDurationInSeconds = 0
-      SubsectionLength = 0
-      for (var j = 0; j < userDetails.courses[i].courseContent.length; j++) {
-        totalDurationInSeconds += userDetails.courses[i].courseContent[
-          j
-        ].subSection.reduce((acc, curr) => acc + parseInt(curr.timeDuration), 0)
-        userDetails.courses[i].totalDuration = convertSecondsToDuration(
-          totalDurationInSeconds
+
+    // Fetch courses enrolled by user with all nested content
+    const { data: enrollmentData, error: enrollError } = await supabase
+      .from("course_enrollments")
+      .select(`
+        courses (
+          *,
+          categories (*),
+          sections (
+            *,
+            sub_sections (*)
+          )
         )
-        SubsectionLength +=
-          userDetails.courses[i].courseContent[j].subSection.length
+      `)
+      .eq("user_id", userId)
+
+    if (enrollError) throw enrollError
+
+    const courses = enrollmentData.map(enrollment => enrollment.courses)
+
+    for (const course of courses) {
+      let totalDurationInSeconds = 0
+      let SubsectionLength = 0
+
+      if (course.sections) {
+        for (const section of course.sections) {
+          if (section.sub_sections) {
+            totalDurationInSeconds += section.sub_sections.reduce(
+              (acc, curr) => acc + parseInt(curr.time_duration || 0),
+              0
+            )
+            SubsectionLength += section.sub_sections.length
+          }
+        }
       }
-      let courseProgressCount = await CourseProgress.findOne({
-        courseID: userDetails.courses[i]._id,
-        userId: userId,
-      })
-      courseProgressCount = courseProgressCount?.completedVideos.length
+
+      course.totalDuration = convertSecondsToDuration(totalDurationInSeconds)
+
+      // Fetch progress for this course
+      const { data: progressData } = await supabase
+        .from("course_progress")
+        .select(`
+          id,
+          completed_videos (sub_section_id)
+        `)
+        .eq("user_id", userId)
+        .eq("course_id", course.id)
+        .single()
+
+      const completedVideosCount = progressData?.completed_videos?.length || 0
+
       if (SubsectionLength === 0) {
-        userDetails.courses[i].progressPercentage = 100
+        course.progressPercentage = 100
       } else {
-        // To make it up to 2 decimal point
         const multiplier = Math.pow(10, 2)
-        userDetails.courses[i].progressPercentage =
+        course.progressPercentage =
           Math.round(
-            (courseProgressCount / SubsectionLength) * 100 * multiplier
+            (completedVideosCount / SubsectionLength) * 100 * multiplier
           ) / multiplier
       }
     }
 
-    if (!userDetails) {
-      return res.status(400).json({
-        success: false,
-        message: `Could not find user with id: ${userDetails}`,
-      })
-    }
     return res.status(200).json({
       success: true,
-      data: userDetails.courses,
+      data: courses,
     })
   } catch (error) {
     return res.status(500).json({
@@ -211,23 +326,30 @@ exports.getEnrolledCourses = async (req, res) => {
 
 exports.instructorDashboard = async (req, res) => {
   try {
-    const courseDetails = await Course.find({ instructor: req.user.id })
+    const userId = req.user.id
 
-    const courseData = courseDetails.map((course) => {
-      const totalStudentsEnrolled = course.studentsEnroled.length
-      const totalAmountGenerated = totalStudentsEnrolled * course.price
+    // Fetch courses created by this instructor
+    const { data: courses, error } = await supabase
+      .from("courses")
+      .select(`
+        *,
+        course_enrollments (count)
+      `)
+      .eq("instructor_id", userId)
 
-      // Create a new object with the additional fields
-      const courseDataWithStats = {
-        _id: course._id,
-        courseName: course.courseName,
-        courseDescription: course.courseDescription,
-        // Include other course properties as needed
+    if (error) throw error
+
+    const courseData = courses.map((course) => {
+      const totalStudentsEnrolled = course.course_enrollments?.[0]?.count || 0
+      const totalAmountGenerated = totalStudentsEnrolled * (course.price || 0)
+
+      return {
+        id: course.id,
+        courseName: course.course_name,
+        courseDescription: course.course_description,
         totalStudentsEnrolled,
         totalAmountGenerated,
       }
-
-      return courseDataWithStats
     })
 
     res.status(200).json({ courses: courseData })

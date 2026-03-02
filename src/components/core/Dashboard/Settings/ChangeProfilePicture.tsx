@@ -6,8 +6,10 @@ import { useDispatch, useSelector } from "react-redux"
 import { updateDisplayPicture } from "../../../../services/operations/SettingsAPI"
 import IconBtn from "../../../Common/IconBtn"
 
+import { useAuth } from "@clerk/clerk-react"
+
 export default function ChangeProfilePicture() {
-  const { token } = useSelector((state) => state.auth)
+  const { getToken } = useAuth()
   const { user } = useSelector((state) => state.profile)
   const dispatch = useDispatch()
 
@@ -38,10 +40,11 @@ export default function ChangeProfilePicture() {
     }
   }
 
-  const handleFileUpload = () => {
+  const handleFileUpload = async () => {
     try {
       console.log("uploading...")
       setLoading(true)
+      const token = await getToken()
       const formData = new FormData()
       formData.append("displayPicture", imageFile)
       // console.log("formdata", formData)

@@ -62,8 +62,7 @@ function App() {
         <Route path="/onboarding" element={<Onboarding />} />
         <Route path="courses/:courseId" element={<CourseDetails />} />
         <Route path="catalog/:catalogName" element={<Catalog />} />
-        {/* Clerk Auth currently handles these via modals on SignedOut component in Navbar.
-            Custom pages have been removed to use Clerk's UI flow. */}
+
         {/* Private Route - for Only Logged in User */}
         <Route
           element={

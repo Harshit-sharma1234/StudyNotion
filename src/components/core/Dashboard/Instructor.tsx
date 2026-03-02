@@ -7,26 +7,29 @@ import { fetchInstructorCourses } from "../../../services/operations/courseDetai
 import { getInstructorData } from "../../../services/operations/profileAPI"
 import InstructorChart from "./InstructorDashboard/InstructorChart"
 
+import { useAuth } from "@clerk/clerk-react"
+
 export default function Instructor() {
-  const { token } = useSelector((state) => state.auth)
+  const { getToken } = useAuth()
   const { user } = useSelector((state) => state.profile)
   const [loading, setLoading] = useState(false)
   const [instructorData, setInstructorData] = useState(null)
   const [courses, setCourses] = useState([])
 
   useEffect(() => {
-    ;(async () => {
+    ; (async () => {
       setLoading(true)
+      const token = await getToken()
       const instructorApiData = await getInstructorData(token)
       const result = await fetchInstructorCourses(token)
       console.log(instructorApiData)
-      if (instructorApiData.length) setInstructorData(instructorApiData)
+      if (instructorApiData?.length) setInstructorData(instructorApiData)
       if (result) {
         setCourses(result)
       }
       setLoading(false)
     })()
-  }, [])
+  }, [getToken])
 
   const totalAmount = instructorData?.reduce(
     (acc, curr) => acc + curr.totalAmountGenerated,
@@ -111,7 +114,7 @@ export default function Instructor() {
                     </p>
                     <div className="mt-1 flex items-center space-x-2">
                       <p className="text-xs font-medium text-richblack-300">
-                        {course.studentsEnroled.length} students
+                        {course.studentsEnroled?.length || 0} students
                       </p>
                       <p className="text-xs font-medium text-richblack-300">
                         |

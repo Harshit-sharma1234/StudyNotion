@@ -1,5 +1,18 @@
-// @ts-nocheck
-export default function Tab({ tabData, field, setField }) {
+import React from "react";
+
+interface TabData {
+  id: number;
+  tabName: string;
+  type: string;
+}
+
+interface TabProps {
+  tabData: TabData[];
+  field: string;
+  setField: (value: string) => void;
+}
+
+export default function Tab({ tabData, field, setField }: TabProps) {
   return (
     <div
       style={{
@@ -11,11 +24,10 @@ export default function Tab({ tabData, field, setField }) {
         <button
           key={tab.id}
           onClick={() => setField(tab.type)}
-          className={`${
-            field === tab.type
+          className={` ${field === tab.type
               ? "bg-richblack-900 text-richblack-5"
               : "bg-transparent text-richblack-200"
-          } py-2 px-5 rounded-full transition-all duration-200`}
+            } py-2 px-5 rounded-full transition-all duration-200 hover:bg-richblack-700/50`}
         >
           {tab?.tabName}
         </button>
