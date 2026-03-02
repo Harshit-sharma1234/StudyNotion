@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form"
 import { toast } from "react-hot-toast"
 import { IoAddCircleOutline } from "react-icons/io5"
 import { MdNavigateNext } from "react-icons/md"
+import { useAuth } from "@clerk/clerk-react"
 import { useDispatch, useSelector } from "react-redux"
 
 import {
@@ -31,11 +32,14 @@ export default function CourseBuilderForm() {
   const [editSectionName, setEditSectionName] = useState(null)
   const dispatch = useDispatch()
 
+  const { getToken } = useAuth()
+
   // handle form submission
   const onSubmit = async (data) => {
     // console.log(data)
     setLoading(true)
 
+    const freshToken = await getToken()
     let result
 
     if (editSectionName) {
@@ -43,18 +47,18 @@ export default function CourseBuilderForm() {
         {
           sectionName: data.sectionName,
           sectionId: editSectionName,
-          courseId: course._id,
+          courseId: course.id,
         },
-        token
+        freshToken
       )
       // console.log("edit", result)
     } else {
       result = await createSection(
         {
           sectionName: data.sectionName,
-          courseId: course._id,
+          courseId: course.id,
         },
-        token
+        freshToken
       )
     }
     if (result) {

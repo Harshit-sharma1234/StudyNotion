@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { VscAdd } from "react-icons/vsc"
+import { useAuth } from "@clerk/clerk-react"
 import { useSelector } from "react-redux"
 import { useNavigate } from "react-router-dom"
 
@@ -8,12 +9,13 @@ import IconBtn from "../../Common/IconBtn"
 import CoursesTable from "./InstructorCourses/CoursesTable"
 
 export default function MyCourses() {
-  const { token } = useSelector((state) => state.auth)
+  const { getToken } = useAuth()
   const navigate = useNavigate()
   const [courses, setCourses] = useState([])
 
   useEffect(() => {
     const fetchCourses = async () => {
+      const token = await getToken()
       const result = await fetchInstructorCourses(token)
       if (result) {
         setCourses(result)

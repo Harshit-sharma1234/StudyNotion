@@ -1,3 +1,4 @@
+import { useAuth } from "@clerk/clerk-react"
 import { useDispatch, useSelector } from "react-redux"
 import { Table, Tbody, Td, Th, Thead, Tr } from "react-super-responsive-table"
 
@@ -19,15 +20,16 @@ import { COURSE_STATUS } from "../../../../utils/constants"
 import ConfirmationModal from "../../../Common/ConfirmationModal"
 
 export default function CoursesTable({ courses, setCourses }) {
+  const { getToken } = useAuth()
   const dispatch = useDispatch()
   const navigate = useNavigate()
-  const { token } = useSelector((state) => state.auth)
   const [loading, setLoading] = useState(false)
   const [confirmationModal, setConfirmationModal] = useState(null)
   const TRUNCATE_LENGTH = 30
 
   const handleCourseDelete = async (courseId) => {
     setLoading(true)
+    const token = await getToken()
     await deleteCourse({ courseId: courseId }, token)
     const result = await fetchInstructorCourses(token)
     if (result) {
@@ -83,13 +85,13 @@ export default function CoursesTable({ courses, setCourses }) {
                       {course.courseName}
                     </p>
                     <p className="text-xs text-richblack-300">
-                      {course.courseDescription.split(" ").length >
-                      TRUNCATE_LENGTH
-                        ? course.courseDescription
-                            .split(" ")
-                            .slice(0, TRUNCATE_LENGTH)
-                            .join(" ") + "..."
-                        : course.courseDescription}
+                      {(course.courseDescription || "").split(" ").length >
+                        TRUNCATE_LENGTH
+                        ? (course.courseDescription || "")
+                          .split(" ")
+                          .slice(0, TRUNCATE_LENGTH)
+                          .join(" ") + "..."
+                        : course.courseDescription || ""}
                     </p>
                     <p className="text-[12px] text-white">
                       Created: {formatDate(course.createdAt)}
@@ -137,10 +139,10 @@ export default function CoursesTable({ courses, setCourses }) {
                         btn2Text: "Cancel",
                         btn1Handler: !loading
                           ? () => handleCourseDelete(course._id)
-                          : () => {},
+                          : () => { },
                         btn2Handler: !loading
                           ? () => setConfirmationModal(null)
-                          : () => {},
+                          : () => { },
                       })
                     }}
                     title="Delete"

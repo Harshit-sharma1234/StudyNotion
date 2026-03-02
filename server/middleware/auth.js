@@ -16,6 +16,7 @@ const mapUserToFrontend = (dbUser) => {
 	if (!dbUser) return null;
 	return {
 		id: dbUser.id,
+		clerkId: dbUser.clerk_id,
 		firstName: dbUser.first_name,
 		lastName: dbUser.last_name,
 		email: dbUser.email,

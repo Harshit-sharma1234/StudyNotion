@@ -65,7 +65,11 @@ exports.categoryPageDetails = async (req, res) => {
 				*,
 				courses!courses_category_id_fkey (
 					*,
-					ratings_reviews (*)
+					ratings_reviews (*),
+					courseContent:sections (
+						*,
+						subSection:sub_sections (*)
+					)
 				)
 			`)
       .eq("id", categoryId)

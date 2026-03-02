@@ -69,7 +69,13 @@ exports.createCourse = async (req, res) => {
         status: status,
         instructions,
       })
-      .select()
+      .select(`
+        *,
+        courseContent:sections (
+          *,
+          subSection:sub_sections (*)
+        )
+      `)
       .single()
 
     if (courseCreateError) throw courseCreateError
@@ -138,9 +144,9 @@ exports.editCourse = async (req, res) => {
         ),
         categories (*),
         ratings_reviews (*),
-        sections (
+        courseContent:sections (
           *,
-          sub_sections (*)
+          subSection:sub_sections (*)
         )
       `)
       .single()
@@ -215,9 +221,9 @@ exports.getCourseDetails = async (req, res) => {
         ),
         categories (*),
         ratings_reviews (*),
-        sections (
+        courseContent:sections (
           *,
-          sub_sections (*)
+          subSection:sub_sections (*)
         )
       `)
       .eq("id", courseId)
@@ -273,9 +279,9 @@ exports.getFullCourseDetails = async (req, res) => {
         ),
         categories (*),
         ratings_reviews (*),
-        sections (
+        courseContent:sections (
           *,
-          sub_sections (*)
+          subSection:sub_sections (*)
         )
       `)
       .eq("id", courseId)

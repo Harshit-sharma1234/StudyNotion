@@ -3,6 +3,7 @@ import { useForm } from "react-hook-form"
 import { toast } from "react-hot-toast"
 import { HiOutlineCurrencyRupee } from "react-icons/hi"
 import { MdNavigateNext } from "react-icons/md"
+import { useAuth } from "@clerk/clerk-react"
 import { useDispatch, useSelector } from "react-redux"
 
 import {
@@ -68,9 +69,9 @@ export default function CourseInformationForm() {
       currentValues.coursePrice !== course.price ||
       currentValues.courseTags.toString() !== course.tag.toString() ||
       currentValues.courseBenefits !== course.whatYouWillLearn ||
-      currentValues.courseCategory._id !== course.category._id ||
+      currentValues.courseCategory !== (course.category?.id || course.category) ||
       currentValues.courseRequirements.toString() !==
-        course.instructions.toString() ||
+      course.instructions.toString() ||
       currentValues.courseImage !== course.thumbnail
     ) {
       return true
@@ -78,9 +79,13 @@ export default function CourseInformationForm() {
     return false
   }
 
+  const { getToken } = useAuth()
+
   //   handle next button click
   const onSubmit = async (data) => {
     // console.log(data)
+
+    const freshToken = await getToken()
 
     if (editCourse) {
       // const currentValues = getValues()
@@ -91,7 +96,7 @@ export default function CourseInformationForm() {
         const currentValues = getValues()
         const formData = new FormData()
         // console.log(data)
-        formData.append("courseId", course._id)
+        formData.append("courseId", course.id)
         if (currentValues.courseTitle !== course.courseName) {
           formData.append("courseName", data.courseTitle)
         }
@@ -107,7 +112,7 @@ export default function CourseInformationForm() {
         if (currentValues.courseBenefits !== course.whatYouWillLearn) {
           formData.append("whatYouWillLearn", data.courseBenefits)
         }
-        if (currentValues.courseCategory._id !== course.category._id) {
+        if (currentValues.courseCategory !== course.category.id) {
           formData.append("category", data.courseCategory)
         }
         if (
@@ -123,10 +128,13 @@ export default function CourseInformationForm() {
           formData.append("thumbnailImage", data.courseImage)
         }
         // console.log("Edit Form data: ", formData)
+        console.log("Editing course details...", formData)
         setLoading(true)
-        const result = await editCourseDetails(formData, token)
+        const result = await editCourseDetails(formData, freshToken)
         setLoading(false)
+        console.log("Result from editCourseDetails:", result)
         if (result) {
+          console.log("Success! Moving to Step 2.")
           dispatch(setStep(2))
           dispatch(setCourse(result))
         }
@@ -146,11 +154,16 @@ export default function CourseInformationForm() {
     formData.append("status", COURSE_STATUS.DRAFT)
     formData.append("instructions", JSON.stringify(data.courseRequirements))
     formData.append("thumbnailImage", data.courseImage)
+    console.log("Submitting new course via addCourseDetails...")
     setLoading(true)
-    const result = await addCourseDetails(formData, token)
+    const result = await addCourseDetails(formData, freshToken)
+    console.log("Response from addCourseDetails:", result)
     if (result) {
+      console.log("Success! Moving to Step 2.")
       dispatch(setStep(2))
       dispatch(setCourse(result))
+    } else {
+      console.log("No result returned from addCourseDetails.")
     }
     setLoading(false)
   }
@@ -236,7 +249,7 @@ export default function CourseInformationForm() {
           </option>
           {!loading &&
             courseCategories?.map((category, indx) => (
-              <option key={indx} value={category?._id}>
+              <option key={indx} value={category?.id}>
                 {category?.name}
               </option>
             ))}
@@ -306,6 +319,7 @@ export default function CourseInformationForm() {
         <IconBtn
           disabled={loading}
           text={!editCourse ? "Next" : "Save Changes"}
+          type="submit"
         >
           <MdNavigateNext />
         </IconBtn>

@@ -15,9 +15,9 @@ const getFullCourseDetails = async (courseId) => {
       ),
       categories (*),
       ratings_reviews (*),
-      sections (
+      courseContent:sections (
         *,
-        sub_sections (*)
+        subSection:sub_sections (*)
       )
     `)
     .eq("id", courseId)

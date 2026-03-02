@@ -7,7 +7,7 @@ const getUpdatedSection = async (sectionId) => {
     .from("sections")
     .select(`
       *,
-      sub_sections (*)
+      subSection:sub_sections (*)
     `)
     .eq("id", sectionId)
     .single()

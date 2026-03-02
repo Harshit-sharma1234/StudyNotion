@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
+import { useAuth } from "@clerk/clerk-react"
 import { useDispatch, useSelector } from "react-redux"
 import { useNavigate } from "react-router-dom"
 
@@ -32,6 +33,8 @@ export default function PublishCourse() {
     navigate("/dashboard/my-courses")
   }
 
+  const { getToken } = useAuth()
+
   const handleCoursePublish = async () => {
     // check if form has been updated or not
     if (
@@ -45,13 +48,14 @@ export default function PublishCourse() {
       return
     }
     const formData = new FormData()
-    formData.append("courseId", course._id)
+    formData.append("courseId", course.id)
     const courseStatus = getValues("public")
       ? COURSE_STATUS.PUBLISHED
       : COURSE_STATUS.DRAFT
     formData.append("status", courseStatus)
     setLoading(true)
-    const result = await editCourseDetails(formData, token)
+    const freshToken = await getToken()
+    const result = await editCourseDetails(formData, freshToken)
     if (result) {
       goToCourses()
     }
@@ -94,7 +98,7 @@ export default function PublishCourse() {
           >
             Back
           </button>
-          <IconBtn disabled={loading} text="Save Changes" />
+          <IconBtn disabled={loading} text="Save Changes" type="submit" />
         </div>
       </form>
     </div>

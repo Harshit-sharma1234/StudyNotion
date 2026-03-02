@@ -4,6 +4,7 @@ import { FaPlus } from "react-icons/fa"
 import { MdEdit } from "react-icons/md"
 import { RiDeleteBin6Line } from "react-icons/ri"
 import { RxDropdownMenu } from "react-icons/rx"
+import { useAuth } from "@clerk/clerk-react"
 import { useDispatch, useSelector } from "react-redux"
 
 import {
@@ -15,8 +16,8 @@ import ConfirmationModal from "../../../../Common/ConfirmationModal"
 import SubSectionModal from "./SubSectionModal"
 
 export default function NestedView({ handleChangeEditSectionName }) {
+  const { getToken } = useAuth()
   const { course } = useSelector((state) => state.course)
-  const { token } = useSelector((state) => state.auth)
   const dispatch = useDispatch()
   // States to keep track of mode of modal [add, view, edit]
   const [addSubSection, setAddSubsection] = useState(null)
@@ -26,9 +27,10 @@ export default function NestedView({ handleChangeEditSectionName }) {
   const [confirmationModal, setConfirmationModal] = useState(null)
 
   const handleDeleleSection = async (sectionId) => {
+    const token = await getToken()
     const result = await deleteSection({
       sectionId,
-      courseId: course._id,
+      courseId: course.id,
       token,
     })
     if (result) {
@@ -38,11 +40,12 @@ export default function NestedView({ handleChangeEditSectionName }) {
   }
 
   const handleDeleteSubSection = async (subSectionId, sectionId) => {
+    const token = await getToken()
     const result = await deleteSubSection({ subSectionId, sectionId, token })
     if (result) {
       // update the structure of course
       const updatedCourseContent = course.courseContent.map((section) =>
-        section._id === sectionId ? result : section
+        section.id === sectionId ? result : section
       )
       const updatedCourse = { ...course, courseContent: updatedCourseContent }
       dispatch(setCourse(updatedCourse))
@@ -58,7 +61,7 @@ export default function NestedView({ handleChangeEditSectionName }) {
       >
         {course?.courseContent?.map((section) => (
           // Section Dropdown
-          <details key={section._id} open>
+          <details key={section.id} open>
             {/* Section Dropdown Content */}
             <summary className="flex cursor-pointer items-center justify-between border-b-2 border-b-richblack-600 py-2">
               <div className="flex items-center gap-x-3">
@@ -71,7 +74,7 @@ export default function NestedView({ handleChangeEditSectionName }) {
                 <button
                   onClick={() =>
                     handleChangeEditSectionName(
-                      section._id,
+                      section.id,
                       section.sectionName
                     )
                   }
@@ -85,7 +88,7 @@ export default function NestedView({ handleChangeEditSectionName }) {
                       text2: "All the lectures in this section will be deleted",
                       btn1Text: "Delete",
                       btn2Text: "Cancel",
-                      btn1Handler: () => handleDeleleSection(section._id),
+                      btn1Handler: () => handleDeleleSection(section.id),
                       btn2Handler: () => setConfirmationModal(null),
                     })
                   }
@@ -100,7 +103,7 @@ export default function NestedView({ handleChangeEditSectionName }) {
               {/* Render All Sub Sections Within a Section */}
               {section.subSection.map((data) => (
                 <div
-                  key={data?._id}
+                  key={data?.id}
                   onClick={() => setViewSubSection(data)}
                   className="flex cursor-pointer items-center justify-between gap-x-3 border-b-2 border-b-richblack-600 py-2"
                 >
@@ -116,7 +119,7 @@ export default function NestedView({ handleChangeEditSectionName }) {
                   >
                     <button
                       onClick={() =>
-                        setEditSubSection({ ...data, sectionId: section._id })
+                        setEditSubSection({ ...data, sectionId: section.id })
                       }
                     >
                       <MdEdit className="text-xl text-richblack-300" />
@@ -129,7 +132,7 @@ export default function NestedView({ handleChangeEditSectionName }) {
                           btn1Text: "Delete",
                           btn2Text: "Cancel",
                           btn1Handler: () =>
-                            handleDeleteSubSection(data._id, section._id),
+                            handleDeleteSubSection(data.id, section.id),
                           btn2Handler: () => setConfirmationModal(null),
                         })
                       }
@@ -141,7 +144,7 @@ export default function NestedView({ handleChangeEditSectionName }) {
               ))}
               {/* Add New Lecture to Section */}
               <button
-                onClick={() => setAddSubsection(section._id)}
+                onClick={() => setAddSubsection(section.id)}
                 className="mt-3 flex items-center gap-x-1 text-yellow-50"
               >
                 <FaPlus className="text-lg" />

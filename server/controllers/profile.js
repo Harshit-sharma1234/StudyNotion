@@ -1,12 +1,15 @@
 const supabase = require("../config/supabase")
 const { uploadImageToCloudinary } = require("../utils/imageUploader")
 const { convertSecondsToDuration } = require("../utils/secToDuration")
+const { createClerkClient } = require("@clerk/clerk-sdk-node");
+const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 
 // Utility to map Supabase user record to frontend format
 const mapUserToFrontend = (dbUser) => {
   if (!dbUser) return null
   return {
     id: dbUser.id,
+    clerkId: dbUser.clerk_id,
     firstName: dbUser.first_name,
     lastName: dbUser.last_name,
     email: dbUser.email,
@@ -181,15 +184,40 @@ exports.getAllUserDetails = async (req, res) => {
 
 exports.updateDisplayPicture = async (req, res) => {
   try {
-    const displayPicture = req.files.displayPicture
     const userId = req.user.id
+
+    if (!req.files || !req.files.displayPicture) {
+      return res.status(400).json({
+        success: false,
+        message: "No display picture file provided",
+      })
+    }
+
+    const displayPicture = req.files.displayPicture
+    const clerkId = req.user.clerkId
+
+    // 1. Upload to Cloudinary
     const image = await uploadImageToCloudinary(
       displayPicture,
       process.env.FOLDER_NAME,
       1000,
-      1000
+      80
     )
 
+    // 2. Sync with Clerk
+    try {
+      if (clerkId) {
+        const fs = require("fs");
+        const fileData = fs.readFileSync(displayPicture.tempFilePath);
+        await clerkClient.users.updateUserProfileImage(clerkId, {
+          file: new Blob([fileData], { type: displayPicture.mimetype })
+        });
+      }
+    } catch (clerkError) {
+      console.error("Clerk Sync Error:", clerkError);
+    }
+
+    // 3. Update local database (Supabase)
     const { error: updateError } = await supabase
       .from("users")
       .update({ image: image.secure_url })
@@ -206,7 +234,7 @@ exports.updateDisplayPicture = async (req, res) => {
 
     if (fetchError) throw fetchError
 
-    res.send({
+    return res.status(200).json({
       success: true,
       message: `Image Updated successfully`,
       data: mapUserToFrontend(fullUserDetails),
